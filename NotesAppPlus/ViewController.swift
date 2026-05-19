@@ -8,10 +8,15 @@
 import Cocoa
 
 class ViewController: NSViewController {
+    private let sidebarInset: CGFloat = 8
+    private let minimumSidebarWidth: CGFloat = 190
+    private let maximumSidebarWidth: CGFloat = 360
     private let noteTitleLabel = NSTextField(labelWithString: "Meeting notes")
     private let sidebar = NSVisualEffectView()
+    private let sidebarResizeHandle = SidebarResizeHandleView()
     private let trackedNotesStack = NSStackView()
     private var sidebarLeadingConstraint: NSLayoutConstraint?
+    private var sidebarWidthConstraint: NSLayoutConstraint?
     private var headerControlsLeadingConstraint: NSLayoutConstraint?
     private var isSidebarVisible = false
     private var newNoteCount = 1
@@ -57,7 +62,9 @@ class ViewController: NSViewController {
             view.addSubview($0)
         }
         
-        let sidebarLeadingConstraint = sidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: -238)
+        let sidebarWidthConstraint = sidebar.widthAnchor.constraint(equalToConstant: 230)
+        let sidebarLeadingConstraint = sidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: closedSidebarLeadingConstant(for: sidebarWidthConstraint.constant))
+        self.sidebarWidthConstraint = sidebarWidthConstraint
         self.sidebarLeadingConstraint = sidebarLeadingConstraint
         
         NSLayoutConstraint.activate([
@@ -69,7 +76,7 @@ class ViewController: NSViewController {
             sidebar.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
             sidebarLeadingConstraint,
             sidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
-            sidebar.widthAnchor.constraint(equalToConstant: 230)
+            sidebarWidthConstraint
         ])
     }
     
@@ -170,6 +177,7 @@ class ViewController: NSViewController {
         sidebar.layer?.shadowOpacity = 0.18
         sidebar.layer?.shadowRadius = 18
         sidebar.layer?.shadowOffset = NSSize(width: 0, height: 6)
+        sidebarResizeHandle.addGestureRecognizer(NSPanGestureRecognizer(target: self, action: #selector(resizeSidebar(_:))))
         
         trackedNotesStack.orientation = .vertical
         trackedNotesStack.spacing = 5
@@ -177,20 +185,26 @@ class ViewController: NSViewController {
         refreshTrackedNotes()
         
         trackedNotesStack.translatesAutoresizingMaskIntoConstraints = false
+        sidebarResizeHandle.translatesAutoresizingMaskIntoConstraints = false
         sidebar.addSubview(trackedNotesStack)
+        sidebar.addSubview(sidebarResizeHandle)
         
         NSLayoutConstraint.activate([
             trackedNotesStack.topAnchor.constraint(equalTo: sidebar.topAnchor),
             trackedNotesStack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
-            trackedNotesStack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor)
+            trackedNotesStack.trailingAnchor.constraint(equalTo: sidebarResizeHandle.leadingAnchor),
+            
+            sidebarResizeHandle.topAnchor.constraint(equalTo: sidebar.topAnchor),
+            sidebarResizeHandle.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            sidebarResizeHandle.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
+            sidebarResizeHandle.widthAnchor.constraint(equalToConstant: 8)
         ])
     }
     
     @objc private func toggleSidebar() {
         isSidebarVisible.toggle()
         sidebar.isHidden = false
-        sidebarLeadingConstraint?.constant = isSidebarVisible ? 8 : -238
-        headerControlsLeadingConstraint?.constant = isSidebarVisible ? 198 : 96
+        updateSidebarRelatedConstraints()
         
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.24
@@ -226,9 +240,16 @@ class ViewController: NSViewController {
     private func makeHeaderButton(symbolName: String, accessibilityLabel: String, action: Selector) -> NSButton {
         let button = NSButton()
         button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel)
-        button.bezelStyle = .texturedRounded
-        button.isBordered = true
+        button.bezelStyle = .regularSquare
+        button.isBordered = false
         button.imageScaling = .scaleProportionallyDown
+        button.contentTintColor = .controlAccentColor
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 14
+        button.layer?.cornerCurve = .continuous
+        button.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.65).cgColor
+        button.layer?.borderColor = NSColor.separatorColor.cgColor
+        button.layer?.borderWidth = 1
         button.target = self
         button.action = action
         button.toolTip = accessibilityLabel
@@ -236,11 +257,33 @@ class ViewController: NSViewController {
         button.translatesAutoresizingMaskIntoConstraints = false
         
         NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(equalToConstant: 32),
+            button.widthAnchor.constraint(equalToConstant: 28),
             button.heightAnchor.constraint(equalToConstant: 28)
         ])
         
         return button
+    }
+    
+    @objc private func resizeSidebar(_ recognizer: NSPanGestureRecognizer) {
+        guard isSidebarVisible, let sidebarWidthConstraint else {
+            return
+        }
+        
+        let translation = recognizer.translation(in: view)
+        let proposedWidth = sidebarWidthConstraint.constant + translation.x
+        sidebarWidthConstraint.constant = min(max(proposedWidth, minimumSidebarWidth), maximumSidebarWidth)
+        recognizer.setTranslation(.zero, in: view)
+        updateSidebarRelatedConstraints()
+    }
+    
+    private func updateSidebarRelatedConstraints() {
+        let width = sidebarWidthConstraint?.constant ?? 230
+        sidebarLeadingConstraint?.constant = isSidebarVisible ? sidebarInset : closedSidebarLeadingConstant(for: width)
+        headerControlsLeadingConstraint?.constant = isSidebarVisible ? width - 32 : 96
+    }
+    
+    private func closedSidebarLeadingConstant(for width: CGFloat) -> CGFloat {
+        -(width + sidebarInset)
     }
     
     private func refreshTrackedNotes() {
@@ -292,5 +335,11 @@ class ViewController: NSViewController {
         ])
         
         return row
+    }
+}
+
+private final class SidebarResizeHandleView: NSView {
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .resizeLeftRight)
     }
 }
