@@ -8,13 +8,19 @@
 import Cocoa
 
 class ViewController: NSViewController {
-
+    private let noteTitleLabel = NSTextField(labelWithString: "Meeting notes")
+    private let searchField = NSSearchField()
+    private let sidebar = NSVisualEffectView()
+    private var sidebarWidthConstraint: NSLayoutConstraint?
+    private var isSidebarVisible = false
+    private var newNoteCount = 1
+    
     override func viewDidLoad() {
         super.viewDidLoad()
-
-        buildNotesShell()
+        
+        buildNotesHeader()
     }
-
+    
     override var representedObject: Any? {
         didSet {
         }
@@ -24,43 +30,34 @@ class ViewController: NSViewController {
         super.viewDidAppear()
         
         view.window?.title = "NotesAppPlus"
-        view.window?.minSize = NSSize(width: 920, height: 580)
+        view.window?.minSize = NSSize(width: 760, height: 460)
     }
     
-    private func buildNotesShell() {
+    private func buildNotesHeader() {
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        view.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
         
         let headerBar = makeHeaderBar()
-        let sidebar = makeSidebar()
-        let notesList = makeNotesList()
-        let editorArea = makeEditorArea()
+        configureSidebar()
         
-        [headerBar, sidebar, notesList, editorArea].forEach {
+        [headerBar, sidebar].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview($0)
         }
+        
+        let sidebarWidthConstraint = sidebar.widthAnchor.constraint(equalToConstant: 0)
+        self.sidebarWidthConstraint = sidebarWidthConstraint
         
         NSLayoutConstraint.activate([
             headerBar.topAnchor.constraint(equalTo: view.topAnchor),
             headerBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             headerBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            headerBar.heightAnchor.constraint(equalToConstant: 64),
+            headerBar.heightAnchor.constraint(equalToConstant: 52),
             
             sidebar.topAnchor.constraint(equalTo: headerBar.bottomAnchor),
             sidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             sidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            sidebar.widthAnchor.constraint(equalToConstant: 220),
-            
-            notesList.topAnchor.constraint(equalTo: headerBar.bottomAnchor),
-            notesList.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
-            notesList.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            notesList.widthAnchor.constraint(equalToConstant: 280),
-            
-            editorArea.topAnchor.constraint(equalTo: headerBar.bottomAnchor),
-            editorArea.leadingAnchor.constraint(equalTo: notesList.trailingAnchor),
-            editorArea.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            editorArea.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            sidebarWidthConstraint
         ])
     }
     
@@ -70,230 +67,169 @@ class ViewController: NSViewController {
         container.blendingMode = .withinWindow
         container.state = .active
         
-        let leftControls = NSStackView(views: [
-            makeIconButton(symbolName: "sidebar.left", accessibilityLabel: "Toggle Sidebar"),
-            makeIconButton(symbolName: "square.and.pencil", accessibilityLabel: "New Note"),
-            makeIconButton(symbolName: "folder.badge.plus", accessibilityLabel: "New Folder")
-        ])
+        let sidebarButton = makeHeaderButton(
+            symbolName: "sidebar.left",
+            accessibilityLabel: "Toggle Sidebar",
+            action: #selector(toggleSidebar)
+        )
+        
+        let newNoteButton = makeHeaderButton(
+            symbolName: "square.and.pencil",
+            accessibilityLabel: "New Note",
+            action: #selector(createNewNote)
+        )
+        
+        let leftControls = NSStackView(views: [sidebarButton, newNoteButton])
         leftControls.orientation = .horizontal
-        leftControls.spacing = 10
+        leftControls.spacing = 8
         leftControls.alignment = .centerY
         
-        let titleStack = NSStackView()
-        titleStack.orientation = .vertical
-        titleStack.spacing = 2
-        titleStack.alignment = .leading
+        noteTitleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        noteTitleLabel.textColor = .labelColor
+        noteTitleLabel.lineBreakMode = .byTruncatingTail
+        noteTitleLabel.alignment = .center
+        noteTitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         
-        let titleLabel = makeLabel("Notes", font: .systemFont(ofSize: 17, weight: .semibold), color: .labelColor)
-        let subtitleLabel = makeLabel("All iCloud notes", font: .systemFont(ofSize: 12, weight: .regular), color: .secondaryLabelColor)
-        titleStack.addArrangedSubview(titleLabel)
-        titleStack.addArrangedSubview(subtitleLabel)
-        
-        let searchField = NSSearchField()
         searchField.placeholderString = "Search"
+        searchField.isHidden = true
+        searchField.target = self
+        searchField.action = #selector(searchChanged)
         searchField.translatesAutoresizingMaskIntoConstraints = false
         
-        let rightControls = NSStackView(views: [
-            makeIconButton(symbolName: "textformat", accessibilityLabel: "Formatting"),
-            makeIconButton(symbolName: "checklist", accessibilityLabel: "Checklist"),
-            makeIconButton(symbolName: "square.and.arrow.up", accessibilityLabel: "Share")
-        ])
+        let searchButton = makeHeaderButton(
+            symbolName: "magnifyingglass",
+            accessibilityLabel: "Search",
+            action: #selector(toggleSearch)
+        )
+        
+        let moreButton = makeHeaderButton(
+            symbolName: "ellipsis.circle",
+            accessibilityLabel: "More Settings",
+            action: #selector(showSettingsMenu(_:))
+        )
+        
+        let rightControls = NSStackView(views: [searchField, searchButton, moreButton])
         rightControls.orientation = .horizontal
         rightControls.spacing = 8
         rightControls.alignment = .centerY
         
-        [leftControls, titleStack, searchField, rightControls].forEach {
+        [leftControls, noteTitleLabel, rightControls].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview($0)
         }
         
         NSLayoutConstraint.activate([
-            leftControls.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 24),
+            leftControls.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
             leftControls.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             
-            titleStack.leadingAnchor.constraint(equalTo: leftControls.trailingAnchor, constant: 22),
-            titleStack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            noteTitleLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            noteTitleLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            noteTitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leftControls.trailingAnchor, constant: 18),
+            noteTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: rightControls.leadingAnchor, constant: -18),
             
-            searchField.trailingAnchor.constraint(equalTo: rightControls.leadingAnchor, constant: -18),
-            searchField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            searchField.widthAnchor.constraint(equalToConstant: 240),
+            rightControls.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            rightControls.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             
-            rightControls.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
-            rightControls.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+            searchField.widthAnchor.constraint(equalToConstant: 210)
         ])
         
         return container
     }
     
-    private func makeSidebar() -> NSView {
-        let container = NSVisualEffectView()
-        container.material = .sidebar
-        container.blendingMode = .withinWindow
-        container.state = .active
+    private func configureSidebar() {
+        sidebar.material = .sidebar
+        sidebar.blendingMode = .withinWindow
+        sidebar.state = .active
+        sidebar.isHidden = true
         
         let stack = NSStackView()
         stack.orientation = .vertical
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 24, left: 18, bottom: 24, right: 18)
+        stack.spacing = 5
+        stack.edgeInsets = NSEdgeInsets(top: 16, left: 14, bottom: 16, right: 10)
         
-        stack.addArrangedSubview(makeSectionLabel("ICLOUD"))
-        stack.addArrangedSubview(makeSidebarRow(symbolName: "note.text", title: "All Notes", count: "24", isSelected: true))
-        stack.addArrangedSubview(makeSidebarRow(symbolName: "folder", title: "Work", count: "8", isSelected: false))
-        stack.addArrangedSubview(makeSidebarRow(symbolName: "folder", title: "Personal", count: "11", isSelected: false))
-        stack.addArrangedSubview(makeSidebarRow(symbolName: "trash", title: "Recently Deleted", count: "3", isSelected: false))
-        
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
-        
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: container.topAnchor),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor)
-        ])
-        
-        return container
-    }
-    
-    private func makeNotesList() -> NSView {
-        let container = RoundedPanelView(fillColor: NSColor.controlBackgroundColor, borderColor: NSColor.separatorColor)
-        
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 18, left: 14, bottom: 18, right: 14)
-        
-        stack.addArrangedSubview(makeLabel("Today", font: .systemFont(ofSize: 13, weight: .semibold), color: .secondaryLabelColor))
-        stack.addArrangedSubview(makeNotePreview(title: "Meeting notes", preview: "Project kickoff, open questions, next steps...", date: "9:41 AM", isSelected: true))
-        stack.addArrangedSubview(makeNotePreview(title: "Shopping", preview: "Coffee, oat milk, lemons, printer paper", date: "Yesterday", isSelected: false))
-        stack.addArrangedSubview(makeNotePreview(title: "Ideas", preview: "Small improvements for the notes editor", date: "Mon", isSelected: false))
+        stack.addArrangedSubview(makeSidebarRow(symbolName: "note.text", title: "Quick Notes", count: "5", isSelected: false))
+        stack.addArrangedSubview(makeSidebarRow(symbolName: "person.2", title: "Shared", count: "2", isSelected: false))
+        stack.addArrangedSubview(makeSidebarSectionLabel("iCloud"))
+        stack.addArrangedSubview(makeSidebarRow(symbolName: "folder", title: "Notes", count: "64", isSelected: true))
+        stack.addArrangedSubview(makeSidebarRow(symbolName: "trash", title: "Recently Deleted", count: "2", isSelected: false))
+        stack.addArrangedSubview(makeSidebarSectionLabel("Google"))
         
         stack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
+        sidebar.addSubview(stack)
         
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: container.topAnchor),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor)
+            stack.topAnchor.constraint(equalTo: sidebar.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor)
         ])
-        
-        return container
     }
     
-    private func makeEditorArea() -> NSView {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+    @objc private func toggleSidebar() {
+        isSidebarVisible.toggle()
+        sidebar.isHidden = false
+        sidebarWidthConstraint?.constant = isSidebarVisible ? 230 : 0
         
-        let title = makeLabel("Meeting notes", font: .systemFont(ofSize: 28, weight: .bold), color: .labelColor)
-        let date = makeLabel("19 May 2026 at 9:41 AM", font: .systemFont(ofSize: 13), color: .tertiaryLabelColor)
-        let rule = NSBox()
-        rule.boxType = .separator
-        
-        let body = makeLabel("Header and styling shell only. Editor interactions and persistence will come next.", font: .systemFont(ofSize: 16), color: .secondaryLabelColor)
-        body.lineBreakMode = .byWordWrapping
-        
-        [title, date, rule, body].forEach {
-            $0.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview($0)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            context.allowsImplicitAnimation = true
+            view.layoutSubtreeIfNeeded()
+        } completionHandler: { [weak self] in
+            self?.sidebar.isHidden = self?.isSidebarVisible == false
         }
-        
-        NSLayoutConstraint.activate([
-            title.topAnchor.constraint(equalTo: container.topAnchor, constant: 46),
-            title.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 48),
-            title.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -48),
-            
-            date.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 8),
-            date.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            
-            rule.topAnchor.constraint(equalTo: date.bottomAnchor, constant: 22),
-            rule.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            rule.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -48),
-            
-            body.topAnchor.constraint(equalTo: rule.bottomAnchor, constant: 28),
-            body.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            body.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -48)
-        ])
-        
-        return container
     }
     
-    private func makeSidebarRow(symbolName: String, title: String, count: String, isSelected: Bool) -> NSView {
-        let row = RoundedPanelView(
-            fillColor: isSelected ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.18) : .clear,
-            borderColor: .clear
-        )
+    @objc private func createNewNote() {
+        newNoteCount += 1
+        noteTitleLabel.stringValue = "Untitled Note \(newNoteCount)"
+        searchField.stringValue = ""
+        view.window?.makeFirstResponder(nil)
+    }
+    
+    @objc private func toggleSearch() {
+        searchField.isHidden.toggle()
         
-        let icon = NSImageView(image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title) ?? NSImage())
-        icon.contentTintColor = isSelected ? .controlAccentColor : .secondaryLabelColor
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        
-        let titleLabel = makeLabel(title, font: .systemFont(ofSize: 14, weight: isSelected ? .semibold : .regular), color: .labelColor)
-        let countLabel = makeLabel(count, font: .systemFont(ofSize: 12, weight: .medium), color: .secondaryLabelColor)
-        
-        [icon, titleLabel, countLabel].forEach {
-            $0.translatesAutoresizingMaskIntoConstraints = false
-            row.addSubview($0)
+        if searchField.isHidden {
+            searchField.stringValue = ""
+            noteTitleLabel.stringValue = "Meeting notes"
+            view.window?.makeFirstResponder(nil)
+        } else {
+            view.window?.makeFirstResponder(searchField)
         }
-        
-        NSLayoutConstraint.activate([
-            row.heightAnchor.constraint(equalToConstant: 34),
-            
-            icon.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 10),
-            icon.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 18),
-            icon.heightAnchor.constraint(equalToConstant: 18),
-            
-            titleLabel.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 9),
-            titleLabel.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            
-            countLabel.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -10),
-            countLabel.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            countLabel.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 8)
-        ])
-        
-        return row
     }
     
-    private func makeNotePreview(title: String, preview: String, date: String, isSelected: Bool) -> NSView {
-        let card = RoundedPanelView(
-            fillColor: isSelected ? NSColor.controlAccentColor.withAlphaComponent(0.14) : NSColor.textBackgroundColor,
-            borderColor: isSelected ? NSColor.controlAccentColor.withAlphaComponent(0.18) : NSColor.separatorColor
-        )
-        
-        let titleLabel = makeLabel(title, font: .systemFont(ofSize: 14, weight: .semibold), color: .labelColor)
-        let dateLabel = makeLabel(date, font: .systemFont(ofSize: 11, weight: .medium), color: .tertiaryLabelColor)
-        let previewLabel = makeLabel(preview, font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
-        previewLabel.lineBreakMode = .byTruncatingTail
-        
-        [titleLabel, dateLabel, previewLabel].forEach {
-            $0.translatesAutoresizingMaskIntoConstraints = false
-            card.addSubview($0)
-        }
-        
-        NSLayoutConstraint.activate([
-            card.heightAnchor.constraint(equalToConstant: 78),
-            
-            titleLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
-            titleLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
-            
-            dateLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
-            dateLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            dateLabel.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 8),
-            
-            previewLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
-            previewLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            previewLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12)
-        ])
-        
-        return card
+    @objc private func searchChanged() {
+        let searchText = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        noteTitleLabel.stringValue = searchText.isEmpty ? "Meeting notes" : "Search: \(searchText)"
     }
     
-    private func makeIconButton(symbolName: String, accessibilityLabel: String) -> NSButton {
+    @objc private func showSettingsMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "View as List", action: #selector(selectSettingsMenuItem(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Sort by Date", action: #selector(selectSettingsMenuItem(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Group by Date", action: #selector(selectSettingsMenuItem(_:)), keyEquivalent: "")
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(withTitle: "View Attachments", action: #selector(selectSettingsMenuItem(_:)), keyEquivalent: "")
+        
+        menu.items.forEach { $0.target = self }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
+    }
+    
+    @objc private func selectSettingsMenuItem(_ sender: NSMenuItem) {
+        noteTitleLabel.stringValue = sender.title
+    }
+    
+    @objc private func selectSidebarItem(_ sender: NSButton) {
+        noteTitleLabel.stringValue = sender.title
+    }
+    
+    private func makeHeaderButton(symbolName: String, accessibilityLabel: String, action: Selector) -> NSButton {
         let button = NSButton()
         button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel)
-        button.bezelStyle = .rounded
+        button.bezelStyle = .texturedRounded
         button.isBordered = true
         button.imageScaling = .scaleProportionallyDown
+        button.target = self
+        button.action = action
         button.toolTip = accessibilityLabel
         button.setAccessibilityLabel(accessibilityLabel)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -306,38 +242,63 @@ class ViewController: NSViewController {
         return button
     }
     
-    private func makeSectionLabel(_ text: String) -> NSTextField {
-        let label = makeLabel(text, font: .systemFont(ofSize: 11, weight: .semibold), color: .tertiaryLabelColor)
-        label.maximumNumberOfLines = 1
-        return label
-    }
-    
-    private func makeLabel(_ text: String, font: NSFont, color: NSColor) -> NSTextField {
+    private func makeSidebarSectionLabel(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
-        label.font = font
-        label.textColor = color
-        label.lineBreakMode = .byTruncatingTail
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = .secondaryLabelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            label.heightAnchor.constraint(equalToConstant: 26)
+        ])
+        
         return label
     }
-}
-
-private final class RoundedPanelView: NSView {
-    private let fillColor: NSColor
-    private let borderColor: NSColor
     
-    init(fillColor: NSColor, borderColor: NSColor) {
-        self.fillColor = fillColor
-        self.borderColor = borderColor
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.cornerRadius = 8
-        layer?.masksToBounds = true
-        layer?.borderWidth = borderColor == .clear ? 0 : 1
-        layer?.backgroundColor = fillColor.cgColor
-        layer?.borderColor = borderColor.cgColor
-    }
-    
-    required init?(coder: NSCoder) {
-        nil
+    private func makeSidebarRow(symbolName: String, title: String, count: String, isSelected: Bool) -> NSView {
+        let row = NSView()
+        row.wantsLayer = true
+        row.layer?.backgroundColor = isSelected ? NSColor.controlColor.cgColor : NSColor.clear.cgColor
+        row.layer?.cornerRadius = 5
+        
+        let iconView = NSImageView(image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title) ?? NSImage())
+        iconView.contentTintColor = isSelected ? .systemRed : .secondaryLabelColor
+        
+        let titleButton = NSButton(title: title, target: self, action: #selector(selectSidebarItem(_:)))
+        titleButton.bezelStyle = .regularSquare
+        titleButton.isBordered = false
+        titleButton.alignment = .left
+        titleButton.font = .systemFont(ofSize: 12, weight: isSelected ? .semibold : .regular)
+        titleButton.contentTintColor = isSelected ? .systemRed : .labelColor
+        
+        let countLabel = NSTextField(labelWithString: count)
+        countLabel.font = .systemFont(ofSize: 12)
+        countLabel.textColor = .tertiaryLabelColor
+        countLabel.alignment = .right
+        
+        [iconView, titleButton, countLabel].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            row.addSubview($0)
+        }
+        
+        NSLayoutConstraint.activate([
+            row.heightAnchor.constraint(equalToConstant: 25),
+            
+            iconView.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 8),
+            iconView.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 14),
+            iconView.heightAnchor.constraint(equalToConstant: 14),
+            
+            titleButton.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6),
+            titleButton.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            titleButton.heightAnchor.constraint(equalToConstant: 20),
+            
+            countLabel.leadingAnchor.constraint(greaterThanOrEqualTo: titleButton.trailingAnchor, constant: 8),
+            countLabel.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -7),
+            countLabel.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            countLabel.widthAnchor.constraint(equalToConstant: 24)
+        ])
+        
+        return row
     }
 }
