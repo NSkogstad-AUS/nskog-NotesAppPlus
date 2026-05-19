@@ -11,11 +11,14 @@ class ViewController: NSViewController {
     private let noteTitleLabel = NSTextField(labelWithString: "Meeting notes")
     private let sidebar = NSVisualEffectView()
     private let trackedNotesStack = NSStackView()
-    private var sidebarWidthConstraint: NSLayoutConstraint?
+    private var sidebarLeadingConstraint: NSLayoutConstraint?
+    private var headerControlsLeadingConstraint: NSLayoutConstraint?
     private var isSidebarVisible = false
     private var newNoteCount = 1
     private var selectedNoteIndex = 0
     private var trackedNotes = ["Meeting notes"]
+    private var hasConfiguredWindowChrome = false
+    private var trafficLightOriginY: CGFloat?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -34,6 +37,14 @@ class ViewController: NSViewController {
         configureWindowChrome()
     }
     
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        
+        if hasConfiguredWindowChrome {
+            positionTrafficLightButtons()
+        }
+    }
+    
     private func buildNotesHeader() {
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
@@ -46,8 +57,8 @@ class ViewController: NSViewController {
             view.addSubview($0)
         }
         
-        let sidebarWidthConstraint = sidebar.widthAnchor.constraint(equalToConstant: 0)
-        self.sidebarWidthConstraint = sidebarWidthConstraint
+        let sidebarLeadingConstraint = sidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: -238)
+        self.sidebarLeadingConstraint = sidebarLeadingConstraint
         
         NSLayoutConstraint.activate([
             headerBar.topAnchor.constraint(equalTo: view.topAnchor),
@@ -55,10 +66,10 @@ class ViewController: NSViewController {
             headerBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             headerBar.heightAnchor.constraint(equalToConstant: 44),
             
-            sidebar.topAnchor.constraint(equalTo: view.topAnchor),
-            sidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            sidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            sidebarWidthConstraint
+            sidebar.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+            sidebarLeadingConstraint,
+            sidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
+            sidebar.widthAnchor.constraint(equalToConstant: 230)
         ])
     }
     
@@ -95,9 +106,12 @@ class ViewController: NSViewController {
             container.addSubview($0)
         }
         
+        let headerControlsLeadingConstraint = leftControls.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 96)
+        self.headerControlsLeadingConstraint = headerControlsLeadingConstraint
+        
         NSLayoutConstraint.activate([
-            leftControls.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 96),
-            leftControls.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            headerControlsLeadingConstraint,
+            leftControls.centerYAnchor.constraint(equalTo: container.centerYAnchor, constant: 3),
             
             noteTitleLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             noteTitleLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
@@ -119,6 +133,27 @@ class ViewController: NSViewController {
         window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = true
+        hasConfiguredWindowChrome = true
+        positionTrafficLightButtons()
+    }
+    
+    private func positionTrafficLightButtons() {
+        guard
+            let closeButton = view.window?.standardWindowButton(.closeButton),
+            let minimizeButton = view.window?.standardWindowButton(.miniaturizeButton),
+            let zoomButton = view.window?.standardWindowButton(.zoomButton)
+        else {
+            return
+        }
+        
+        let originX: CGFloat = 20
+        let spacing: CGFloat = 22
+        let originY = trafficLightOriginY ?? closeButton.frame.origin.y - 10
+        trafficLightOriginY = originY
+        
+        closeButton.setFrameOrigin(NSPoint(x: originX, y: originY))
+        minimizeButton.setFrameOrigin(NSPoint(x: originX + spacing, y: originY))
+        zoomButton.setFrameOrigin(NSPoint(x: originX + (spacing * 2), y: originY))
     }
     
     private func configureSidebar() {
@@ -127,8 +162,14 @@ class ViewController: NSViewController {
         sidebar.state = .active
         sidebar.isHidden = true
         sidebar.wantsLayer = true
+        sidebar.layer?.cornerRadius = 18
+        sidebar.layer?.cornerCurve = .continuous
         sidebar.layer?.borderColor = NSColor.separatorColor.cgColor
         sidebar.layer?.borderWidth = 1
+        sidebar.layer?.shadowColor = NSColor.black.cgColor
+        sidebar.layer?.shadowOpacity = 0.18
+        sidebar.layer?.shadowRadius = 18
+        sidebar.layer?.shadowOffset = NSSize(width: 0, height: 6)
         
         trackedNotesStack.orientation = .vertical
         trackedNotesStack.spacing = 5
@@ -148,10 +189,12 @@ class ViewController: NSViewController {
     @objc private func toggleSidebar() {
         isSidebarVisible.toggle()
         sidebar.isHidden = false
-        sidebarWidthConstraint?.constant = isSidebarVisible ? 230 : 0
+        sidebarLeadingConstraint?.constant = isSidebarVisible ? 8 : -238
+        headerControlsLeadingConstraint?.constant = isSidebarVisible ? 198 : 96
         
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
+            context.duration = 0.24
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             context.allowsImplicitAnimation = true
             view.layoutSubtreeIfNeeded()
         } completionHandler: { [weak self] in
