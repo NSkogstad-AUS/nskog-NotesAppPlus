@@ -17,13 +17,16 @@ class ViewController: NSViewController {
     private let trackedNotesStack = NSStackView()
     private var sidebarLeadingConstraint: NSLayoutConstraint?
     private var sidebarWidthConstraint: NSLayoutConstraint?
-    private var headerControlsLeadingConstraint: NSLayoutConstraint?
+    private var closedHeaderControlsLeadingConstraint: NSLayoutConstraint?
+    private var attachedHeaderControlsTrailingConstraint: NSLayoutConstraint?
+    private var titleClosedLeadingConstraint: NSLayoutConstraint?
+    private var titleOpenLeadingConstraint: NSLayoutConstraint?
     private var isSidebarVisible = false
-    private var newNoteCount = 1
     private var selectedNoteIndex = 0
     private var trackedNotes = ["Meeting notes"]
-    private var hasConfiguredWindowChrome = false
     private var trafficLightOriginY: CGFloat?
+    private var sidebarResizeStartWidth: CGFloat?
+    private var windowWasResizableBeforeSidebarResize = false
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -40,14 +43,6 @@ class ViewController: NSViewController {
         super.viewDidAppear()
         
         configureWindowChrome()
-    }
-    
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        
-        if hasConfiguredWindowChrome {
-            positionTrafficLightButtons()
-        }
     }
     
     private func buildNotesHeader() {
@@ -91,13 +86,7 @@ class ViewController: NSViewController {
             action: #selector(toggleSidebar)
         )
         
-        let newNoteButton = makeHeaderButton(
-            symbolName: "square.and.pencil",
-            accessibilityLabel: "New Note",
-            action: #selector(createNewNote)
-        )
-        
-        let leftControls = NSStackView(views: [sidebarButton, newNoteButton])
+        let leftControls = NSStackView(views: [sidebarButton])
         leftControls.orientation = .horizontal
         leftControls.spacing = 8
         leftControls.alignment = .centerY
@@ -113,16 +102,25 @@ class ViewController: NSViewController {
             container.addSubview($0)
         }
         
-        let headerControlsLeadingConstraint = leftControls.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 96)
-        self.headerControlsLeadingConstraint = headerControlsLeadingConstraint
+        let closedHeaderControlsLeadingConstraint = leftControls.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 96)
+        let attachedHeaderControlsTrailingConstraint = leftControls.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -40)
+        self.closedHeaderControlsLeadingConstraint = closedHeaderControlsLeadingConstraint
+        self.attachedHeaderControlsTrailingConstraint = attachedHeaderControlsTrailingConstraint
+        attachedHeaderControlsTrailingConstraint.isActive = false
+        
+        let titleClosedLeadingConstraint = noteTitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leftControls.trailingAnchor, constant: 18)
+        let titleOpenLeadingConstraint = noteTitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: sidebar.trailingAnchor, constant: 28)
+        self.titleClosedLeadingConstraint = titleClosedLeadingConstraint
+        self.titleOpenLeadingConstraint = titleOpenLeadingConstraint
+        titleOpenLeadingConstraint.isActive = false
         
         NSLayoutConstraint.activate([
-            headerControlsLeadingConstraint,
+            closedHeaderControlsLeadingConstraint,
             leftControls.centerYAnchor.constraint(equalTo: container.centerYAnchor, constant: 3),
             
             noteTitleLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             noteTitleLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            noteTitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leftControls.trailingAnchor, constant: 18),
+            titleClosedLeadingConstraint,
             noteTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -18)
         ])
         
@@ -139,8 +137,7 @@ class ViewController: NSViewController {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
-        window.isMovableByWindowBackground = true
-        hasConfiguredWindowChrome = true
+        window.isMovableByWindowBackground = false
         positionTrafficLightButtons()
     }
     
@@ -164,6 +161,8 @@ class ViewController: NSViewController {
     }
     
     private func configureSidebar() {
+        sidebarResizeHandle.wantsLayer = true
+        sidebarResizeHandle.layer?.backgroundColor = NSColor.clear.cgColor
         sidebar.material = .sidebar
         sidebar.blendingMode = .withinWindow
         sidebar.state = .active
@@ -177,7 +176,15 @@ class ViewController: NSViewController {
         sidebar.layer?.shadowOpacity = 0.18
         sidebar.layer?.shadowRadius = 18
         sidebar.layer?.shadowOffset = NSSize(width: 0, height: 6)
-        sidebarResizeHandle.addGestureRecognizer(NSPanGestureRecognizer(target: self, action: #selector(resizeSidebar(_:))))
+        sidebarResizeHandle.onDragStarted = { [weak self] in
+            self?.beginSidebarResize()
+        }
+        sidebarResizeHandle.onDragChanged = { [weak self] totalDeltaX in
+            self?.resizeSidebar(by: totalDeltaX)
+        }
+        sidebarResizeHandle.onDragEnded = { [weak self] in
+            self?.endSidebarResize()
+        }
         
         trackedNotesStack.orientation = .vertical
         trackedNotesStack.spacing = 5
@@ -197,7 +204,7 @@ class ViewController: NSViewController {
             sidebarResizeHandle.topAnchor.constraint(equalTo: sidebar.topAnchor),
             sidebarResizeHandle.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             sidebarResizeHandle.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
-            sidebarResizeHandle.widthAnchor.constraint(equalToConstant: 8)
+            sidebarResizeHandle.widthAnchor.constraint(equalToConstant: 14)
         ])
     }
     
@@ -214,21 +221,6 @@ class ViewController: NSViewController {
         } completionHandler: { [weak self] in
             self?.sidebar.isHidden = self?.isSidebarVisible == false
         }
-    }
-    
-    @objc private func createNewNote() {
-        newNoteCount += 1
-        let noteTitle = "Untitled Note \(newNoteCount)"
-        trackedNotes.append(noteTitle)
-        selectedNoteIndex = trackedNotes.count - 1
-        noteTitleLabel.stringValue = noteTitle
-        refreshTrackedNotes()
-        
-        if !isSidebarVisible {
-            toggleSidebar()
-        }
-        
-        view.window?.makeFirstResponder(nil)
     }
     
     @objc private func selectSidebarItem(_ sender: NSButton) {
@@ -264,22 +256,51 @@ class ViewController: NSViewController {
         return button
     }
     
-    @objc private func resizeSidebar(_ recognizer: NSPanGestureRecognizer) {
+    private func resizeSidebar(by deltaX: CGFloat) {
         guard isSidebarVisible, let sidebarWidthConstraint else {
             return
         }
         
-        let translation = recognizer.translation(in: view)
-        let proposedWidth = sidebarWidthConstraint.constant + translation.x
+        let startingWidth = sidebarResizeStartWidth ?? sidebarWidthConstraint.constant
+        let proposedWidth = startingWidth + deltaX
         sidebarWidthConstraint.constant = min(max(proposedWidth, minimumSidebarWidth), maximumSidebarWidth)
-        recognizer.setTranslation(.zero, in: view)
         updateSidebarRelatedConstraints()
+        
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            view.layoutSubtreeIfNeeded()
+        }
+    }
+    
+    private func beginSidebarResize() {
+        sidebarResizeStartWidth = sidebarWidthConstraint?.constant
+        
+        guard let window = view.window else {
+            return
+        }
+        
+        windowWasResizableBeforeSidebarResize = window.styleMask.contains(.resizable)
+        window.styleMask.remove(.resizable)
+    }
+    
+    private func endSidebarResize() {
+        sidebarResizeStartWidth = nil
+        
+        guard windowWasResizableBeforeSidebarResize, let window = view.window else {
+            return
+        }
+        
+        window.styleMask.insert(.resizable)
     }
     
     private func updateSidebarRelatedConstraints() {
         let width = sidebarWidthConstraint?.constant ?? 230
         sidebarLeadingConstraint?.constant = isSidebarVisible ? sidebarInset : closedSidebarLeadingConstant(for: width)
-        headerControlsLeadingConstraint?.constant = isSidebarVisible ? width - 32 : 96
+        closedHeaderControlsLeadingConstraint?.isActive = !isSidebarVisible
+        attachedHeaderControlsTrailingConstraint?.isActive = isSidebarVisible
+        titleClosedLeadingConstraint?.isActive = !isSidebarVisible
+        titleOpenLeadingConstraint?.isActive = isSidebarVisible
     }
     
     private func closedSidebarLeadingConstant(for width: CGFloat) -> CGFloat {
@@ -339,6 +360,47 @@ class ViewController: NSViewController {
 }
 
 private final class SidebarResizeHandleView: NSView {
+    var onDragStarted: (() -> Void)?
+    var onDragChanged: ((CGFloat) -> Void)?
+    var onDragEnded: (() -> Void)?
+    private var startingDragX: CGFloat?
+    
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+    
+    override var mouseDownCanMoveWindow: Bool {
+        false
+    }
+    
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+    
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(point) ? self : nil
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        startingDragX = event.locationInWindow.x
+        onDragStarted?()
+    }
+    
+    override func mouseDragged(with event: NSEvent) {
+        let currentX = event.locationInWindow.x
+        guard let startingDragX else {
+            self.startingDragX = currentX
+            return
+        }
+        
+        onDragChanged?(currentX - startingDragX)
+    }
+    
+    override func mouseUp(with event: NSEvent) {
+        startingDragX = nil
+        onDragEnded?()
+    }
+    
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .resizeLeftRight)
     }
