@@ -1,17 +1,18 @@
 import AppKit
 
-// Coordinator between the list pane and editor pane.
 final class RootSplitViewController: NSSplitViewController {
+    private let sidebarVC: SidebarViewController
     private let listVC: NotesListViewController
     private let editorVC: EditorViewController
 
     init(repository: NoteRepository, fileStore: FileStore, searchIndex: SearchIndex) {
-        self.listVC   = NotesListViewController(repository: repository,
-                                                fileStore: fileStore,
-                                                searchIndex: searchIndex)
-        self.editorVC = EditorViewController(repository: repository,
-                                             fileStore: fileStore,
-                                             searchIndex: searchIndex)
+        self.sidebarVC = SidebarViewController()
+        self.listVC    = NotesListViewController(repository: repository,
+                                                  fileStore: fileStore,
+                                                  searchIndex: searchIndex)
+        self.editorVC  = EditorViewController(repository: repository,
+                                               fileStore: fileStore,
+                                               searchIndex: searchIndex)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -20,17 +21,22 @@ final class RootSplitViewController: NSSplitViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        splitView.isVertical = true
+        splitView.isVertical   = true
         splitView.dividerStyle = .thin
 
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarVC)
+        sidebarItem.minimumThickness = 200
+        sidebarItem.maximumThickness = 280
+        sidebarItem.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
+
         let listItem = NSSplitViewItem(viewController: listVC)
-        listItem.minimumThickness = 200
-        listItem.maximumThickness = 380
-        listItem.preferredThicknessFraction = 0.28
+        listItem.minimumThickness = 240
+        listItem.maximumThickness = 420
 
         let editorItem = NSSplitViewItem(viewController: editorVC)
         editorItem.minimumThickness = 320
 
+        addSplitViewItem(sidebarItem)
         addSplitViewItem(listItem)
         addSplitViewItem(editorItem)
 
@@ -40,13 +46,9 @@ final class RootSplitViewController: NSSplitViewController {
 }
 
 extension RootSplitViewController: NotesListDelegate {
-    func didSelectNote(_ note: Note?) {
-        editorVC.loadNote(note)
-    }
+    func didSelectNote(_ note: Note?) { editorVC.loadNote(note) }
 }
 
 extension RootSplitViewController: EditorDelegate {
-    func editorDidSaveNote(_ note: Note) {
-        listVC.noteWasUpdated(note)
-    }
+    func editorDidSaveNote(_ note: Note) { listVC.noteWasUpdated(note) }
 }

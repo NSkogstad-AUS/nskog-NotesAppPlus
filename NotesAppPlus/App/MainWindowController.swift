@@ -3,16 +3,22 @@ import AppKit
 final class MainWindowController: NSWindowController {
     init(repository: NoteRepository, fileStore: FileStore, searchIndex: SearchIndex) {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        window.title = "Notes"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
         window.setFrameAutosaveName("MainWindow")
-        window.minSize = NSSize(width: 640, height: 400)
-        window.titlebarAppearsTransparent = false
-        window.toolbarStyle = .unified
+        window.minSize = NSSize(width: 800, height: 500)
+
+        // Unified toolbar makes the titlebar area merge with our content
+        let toolbar = NSToolbar(identifier: "MainToolbar")
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unifiedCompact
 
         super.init(window: window)
 

@@ -15,100 +15,158 @@ final class NotesListViewController: NSViewController {
     private var allNotes: [Note] = []
     private var displayedNotes: [Note] = []
 
-    // MARK: - Subviews
+    // MARK: - Header subviews
 
+    private let noteCountLabel: NSTextField = {
+        let l = NSTextField(labelWithString: "")
+        l.font = .systemFont(ofSize: 11, weight: .regular)
+        l.textColor = .secondaryLabelColor
+        return l
+    }()
+
+    // Search field – used by the header and drives the list filter
     private let searchField: NSSearchField = {
         let f = NSSearchField()
         f.placeholderString = "Search"
-        f.controlSize = .small
+        f.translatesAutoresizingMaskIntoConstraints = false
         return f
     }()
-    private let newButton: NSButton = {
-        let b = NSButton()
-        b.image = NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: "New Note")
-        b.bezelStyle = .toolbar
-        b.isBordered = false
-        b.toolTip = "New Note"
-        return b
-    }()
-    private let deleteButton: NSButton = {
-        let b = NSButton()
-        b.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Delete Note")
-        b.bezelStyle = .toolbar
-        b.isBordered = false
-        b.toolTip = "Delete Note"
-        b.isEnabled = false
-        return b
-    }()
-    private let tableView = NSTableView()
+
+    // MARK: - List subviews
+
+    private let tableView   = NSTableView()
     private let scrollView: NSScrollView = {
         let s = NSScrollView()
         s.hasVerticalScroller = true
-        s.autohidesScrollers = true
-        s.borderType = .noBorder
+        s.autohidesScrollers  = true
+        s.borderType          = .noBorder
         return s
     }()
 
     // MARK: - Init
 
     init(repository: NoteRepository, fileStore: FileStore, searchIndex: SearchIndex) {
-        self.repository = repository
-        self.fileStore = fileStore
+        self.repository  = repository
+        self.fileStore   = fileStore
         self.searchIndex = searchIndex
         super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
+    // MARK: - Lifecycle
+
     override func loadView() { view = NSView() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        setupToolbar()
+        setupHeader()
         setupTableView()
         reload()
     }
 
     // MARK: - Layout
 
-    private func setupToolbar() {
-        newButton.target = self
-        newButton.action = #selector(createNote)
-        deleteButton.target = self
-        deleteButton.action = #selector(deleteSelectedNote)
-        searchField.delegate = self
+    private func setupHeader() {
+        // Container – light white background
+        let header = NSView()
+        header.wantsLayer = true
+        header.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(header)
 
-        let toolbar = NSStackView(views: [newButton, deleteButton, searchField])
-        toolbar.orientation = .horizontal
-        toolbar.spacing = 4
-        toolbar.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
-        toolbar.setHuggingPriority(.defaultLow, for: .horizontal)
-        searchField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        newButton.setContentHuggingPriority(.required, for: .horizontal)
-        deleteButton.setContentHuggingPriority(.required, for: .horizontal)
+        // — Left side —
+        let titleLabel = NSTextField(labelWithString: "Notes")
+        titleLabel.font = .systemFont(ofSize: 15, weight: .bold)
+        titleLabel.textColor = .labelColor
 
-        let separator = NSBox()
-        separator.boxType = .separator
+        noteCountLabel.stringValue = "0 notes"
 
-        [toolbar, separator].forEach {
-            $0.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview($0)
+        let titleStack = NSStackView(views: [titleLabel, noteCountLabel])
+        titleStack.orientation = .vertical
+        titleStack.alignment   = .leading
+        titleStack.spacing     = 1
+
+        let backBtn = RoundedIconButton(symbol: "chevron.left", size: 28, iconPt: 12, bg: false)
+        backBtn.contentTintColor = .secondaryLabelColor
+
+        let leftStack = NSStackView(views: [backBtn, titleStack])
+        leftStack.orientation = .horizontal
+        leftStack.spacing     = 6
+        leftStack.alignment   = .centerY
+
+        // — Right side: toolbar buttons —
+        let toolSymbols = [
+            ("square.and.pencil",      "New Note"),
+            ("textformat",             "Format"),
+            ("checklist",              "Checklist"),
+            ("tablecells",             "Table"),
+            ("paperclip",              "Attachment"),
+            ("applepencil.and.scribble","Scribble"),
+            ("square.and.arrow.up",    "Share"),
+            ("ellipsis",               "More"),
+        ]
+        let toolButtons = toolSymbols.map { sym, _ -> NSView in
+            let b = RoundedIconButton(symbol: sym, size: 30, iconPt: 14, bg: false)
+            b.contentTintColor = .secondaryLabelColor
+            return b
         }
 
-        NSLayoutConstraint.activate([
-            toolbar.topAnchor.constraint(equalTo: view.topAnchor),
-            toolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            toolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        // Wire new-note button
+        if let newBtn = toolButtons.first as? RoundedIconButton {
+            newBtn.target = self
+            newBtn.action = #selector(createNote)
+        }
 
-            separator.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
-            separator.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            separator.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        let toolStack = NSStackView(views: toolButtons)
+        toolStack.orientation = .horizontal
+        toolStack.spacing     = 0
+
+        // Search field
+        searchField.delegate = self
+        searchField.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        searchField.widthAnchor.constraint(equalToConstant: 180).isActive = true
+
+        let rightStack = NSStackView(views: [toolStack, searchField])
+        rightStack.orientation = .horizontal
+        rightStack.spacing     = 8
+        rightStack.alignment   = .centerY
+
+        // — Assemble header —
+        let hStack = NSStackView(views: [leftStack, rightStack])
+        hStack.orientation = .horizontal
+        hStack.alignment   = .centerY
+        hStack.translatesAutoresizingMaskIntoConstraints = false
+
+        leftStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        rightStack.setContentHuggingPriority(.required, for: .horizontal)
+
+        header.addSubview(hStack)
+
+        // Separator
+        let sep = NSBox()
+        sep.boxType = .separator
+        sep.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(sep)
+
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: view.topAnchor),
+            header.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            header.heightAnchor.constraint(equalToConstant: 52),
+
+            hStack.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 14),
+            hStack.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -14),
+            hStack.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+
+            sep.topAnchor.constraint(equalTo: header.bottomAnchor),
+            sep.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            sep.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrollView)
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: separator.bottomAnchor),
+            scrollView.topAnchor.constraint(equalTo: sep.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -116,17 +174,17 @@ final class NotesListViewController: NSViewController {
     }
 
     private func setupTableView() {
-        tableView.headerView = nil
-        tableView.rowHeight = 58
+        tableView.headerView  = nil
+        tableView.rowHeight   = 58
         tableView.backgroundColor = .clear
         tableView.selectionHighlightStyle = .regular
-        tableView.delegate = self
-        tableView.dataSource = self
-        tableView.style = .plain
+        tableView.style       = .plain
+        tableView.delegate    = self
+        tableView.dataSource  = self
 
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("NoteColumn"))
-        column.isEditable = false
-        tableView.addTableColumn(column)
+        let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("NoteColumn"))
+        col.isEditable = false
+        tableView.addTableColumn(col)
 
         scrollView.documentView = tableView
     }
@@ -139,14 +197,15 @@ final class NotesListViewController: NSViewController {
     }
 
     private func applyFilter(query: String) {
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        if q.isEmpty {
             displayedNotes = allNotes
         } else {
-            let matchIDs = Set(searchIndex.search(query: trimmed))
-            displayedNotes = allNotes.filter { matchIDs.contains($0.id) }
+            let ids = Set(searchIndex.search(query: q))
+            displayedNotes = allNotes.filter { ids.contains($0.id) }
         }
         tableView.reloadData()
+        updateCount()
 
         if let first = displayedNotes.first {
             tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
@@ -156,47 +215,42 @@ final class NotesListViewController: NSViewController {
         }
     }
 
-    // Called by RootSplitViewController after the editor autosaves.
+    private func updateCount() {
+        let n = displayedNotes.count
+        noteCountLabel.stringValue = "\(n) \(n == 1 ? "note" : "notes")"
+    }
+
     func noteWasUpdated(_ note: Note) {
-        if let i = allNotes.firstIndex(where: { $0.id == note.id }) {
-            allNotes[i] = note
-        }
-        if let i = displayedNotes.firstIndex(where: { $0.id == note.id }) {
+        if let i = allNotes.firstIndex(where: { $0.id == note.id })        { allNotes[i]        = note }
+        if let i = displayedNotes.firstIndex(where: { $0.id == note.id })  {
             displayedNotes[i] = note
-            tableView.reloadData(
-                forRowIndexes: IndexSet(integer: i),
-                columnIndexes: IndexSet(integer: 0)
-            )
+            tableView.reloadData(forRowIndexes: IndexSet(integer: i), columnIndexes: IndexSet(integer: 0))
         }
     }
 
     // MARK: - Actions
 
     @objc private func createNote() {
-        let id       = UUID().uuidString
-        let filename = fileStore.filename(for: id)
-        let now      = Date()
-        let note     = Note(id: id, title: "Untitled", path: filename,
-                            createdAt: now, updatedAt: now, preview: "", pinned: false)
+        let id   = UUID().uuidString
+        let file = fileStore.filename(for: id)
+        let now  = Date()
+        let note = Note(id: id, title: "Untitled", path: file,
+                        createdAt: now, updatedAt: now, preview: "", pinned: false)
         do {
-            try fileStore.write(body: "", to: filename)
+            try fileStore.write(body: "", to: file)
             try repository.insert(note)
             searchIndex.upsert(id: id, title: "Untitled", body: "")
-
             allNotes.insert(note, at: 0)
             displayedNotes.insert(note, at: 0)
             tableView.insertRows(at: IndexSet(integer: 0), withAnimation: .slideDown)
             tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
             delegate?.didSelectNote(note)
-        } catch {
-            presentError(error)
-        }
+            updateCount()
+        } catch { presentError(error) }
     }
 
-    @objc private func deleteSelectedNote() {
-        let row = tableView.selectedRow
+    private func deleteNote(at row: Int) {
         guard row >= 0, row < displayedNotes.count else { return }
-
         let note  = displayedNotes[row]
         let alert = NSAlert()
         alert.messageText     = "Delete \u{201C}\(note.title)\u{201D}?"
@@ -205,25 +259,29 @@ final class NotesListViewController: NSViewController {
         alert.addButton(withTitle: "Cancel")
         alert.buttons[0].hasDestructiveAction = true
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-
         do {
             try fileStore.delete(filename: note.path)
             try repository.delete(id: note.id)
             searchIndex.delete(id: note.id)
-
             displayedNotes.remove(at: row)
             allNotes.removeAll { $0.id == note.id }
             tableView.removeRows(at: IndexSet(integer: row), withAnimation: .slideUp)
-
-            let nextRow = min(row, displayedNotes.count - 1)
-            if nextRow >= 0 {
-                tableView.selectRowIndexes(IndexSet(integer: nextRow), byExtendingSelection: false)
-                delegate?.didSelectNote(displayedNotes[nextRow])
+            let next = min(row, displayedNotes.count - 1)
+            if next >= 0 {
+                tableView.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
+                delegate?.didSelectNote(displayedNotes[next])
             } else {
                 delegate?.didSelectNote(nil)
             }
-        } catch {
-            presentError(error)
+            updateCount()
+        } catch { presentError(error) }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 51 { // Delete key
+            deleteNote(at: tableView.selectedRow)
+        } else {
+            super.keyDown(with: event)
         }
     }
 }
@@ -241,18 +299,14 @@ extension NotesListViewController: NSTableViewDelegate {
         let note = displayedNotes[row]
         let id   = NSUserInterfaceItemIdentifier("NoteCell")
         if let cell = tableView.makeView(withIdentifier: id, owner: nil) as? NoteCellView {
-            cell.configure(with: note)
-            return cell
+            cell.configure(with: note); return cell
         }
-        let cell = NoteCellView()
-        cell.identifier = id
-        cell.configure(with: note)
+        let cell = NoteCellView(); cell.identifier = id; cell.configure(with: note)
         return cell
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         let row = tableView.selectedRow
-        deleteButton.isEnabled = row >= 0
         if row >= 0, row < displayedNotes.count {
             delegate?.didSelectNote(displayedNotes[row])
         }
@@ -294,21 +348,20 @@ private final class NoteCellView: NSTableCellView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         [titleLabel, previewLabel, dateLabel].forEach {
-            $0.translatesAutoresizingMaskIntoConstraints = false
-            addSubview($0)
+            $0.translatesAutoresizingMaskIntoConstraints = false; addSubview($0)
         }
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 10),
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             titleLabel.trailingAnchor.constraint(equalTo: dateLabel.leadingAnchor, constant: -6),
 
             dateLabel.firstBaselineAnchor.constraint(equalTo: titleLabel.firstBaselineAnchor),
-            dateLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            dateLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             dateLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 80),
 
             previewLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 3),
-            previewLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            previewLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            previewLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            previewLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
         ])
     }
 

@@ -7,7 +7,7 @@ final class NoteRepositoryTests: XCTestCase {
     private var searchIndex: SearchIndex!
     private var tempDir: URL!
 
-    override func setUp() throws {
+    override func setUpWithError() throws {
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -17,7 +17,7 @@ final class NoteRepositoryTests: XCTestCase {
         searchIndex = SearchIndex(database: db)
     }
 
-    override func tearDown() throws {
+    override func tearDownWithError() throws {
         db   = nil
         repo = nil
         try FileManager.default.removeItem(at: tempDir)

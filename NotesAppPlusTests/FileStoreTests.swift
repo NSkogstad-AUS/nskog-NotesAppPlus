@@ -11,7 +11,7 @@ final class FileStoreTests: XCTestCase {
         store = FileStore(notesDirectory: tempDir)
     }
 
-    override func tearDown() throws {
+    override func tearDownWithError() throws {
         try FileManager.default.removeItem(at: tempDir)
     }
 
